@@ -184,7 +184,7 @@ export async function searchAniListManga(query: string, limit = 25): Promise<Plu
   const filtered = media.filter((entry) => entry.isAdult !== true)
   const mapped = filtered.map(toSummary)
   const relevant = mapped.filter((entry) => isRelevantTitleMatch(query, entry.name))
-  return relevant.length > 0 ? relevant : mapped
+  return relevant
 }
 
 export async function listTrendingAniListManga(limit = 40): Promise<PluginMangaSummary[]> {
