@@ -26,6 +26,7 @@ interface AniListMedia {
   countryOfOrigin?: string | null
   genres?: string[] | null
   startDate?: { year?: number | null } | null
+  isAdult?: boolean | null
 }
 
 interface AniListPageResponse {
@@ -130,6 +131,26 @@ const toSummary = (media: AniListMedia): PluginMangaSummary => {
   }
 }
 
+const normalizeSearchToken = (value: string): string =>
+  value
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/[^a-z0-9 ]+/g, '')
+    .trim()
+
+const isRelevantTitleMatch = (query: string, title: string): boolean => {
+  const normalizedQuery = normalizeSearchToken(query)
+  const normalizedTitle = normalizeSearchToken(title)
+  if (!normalizedQuery || !normalizedTitle) return false
+  if (normalizedTitle.includes(normalizedQuery)) return true
+
+  const queryTokens = normalizedQuery.split(' ').filter(Boolean)
+  const titleTokens = normalizedTitle.split(' ').filter(Boolean)
+  return queryTokens.every((token) =>
+    titleTokens.some((titleToken) => titleToken.startsWith(token) || token.startsWith(titleToken))
+  )
+}
+
 export async function searchAniListManga(query: string, limit = 25): Promise<PluginMangaSummary[]> {
   const graphql = `
     query SearchManga($search: String, $page: Int, $perPage: Int) {
@@ -147,6 +168,7 @@ export async function searchAniListManga(query: string, limit = 25): Promise<Plu
           countryOfOrigin
           genres
           startDate { year }
+          isAdult
         }
       }
     }
@@ -159,14 +181,17 @@ export async function searchAniListManga(query: string, limit = 25): Promise<Plu
   })
 
   const media = payload.data?.Page?.media ?? []
-  return media.map(toSummary)
+  const filtered = media.filter((entry) => entry.isAdult !== true)
+  const mapped = filtered.map(toSummary)
+  const relevant = mapped.filter((entry) => isRelevantTitleMatch(query, entry.name))
+  return relevant.length > 0 ? relevant : mapped
 }
 
 export async function listTrendingAniListManga(limit = 40): Promise<PluginMangaSummary[]> {
   const graphql = `
     query TrendingManga($page: Int, $perPage: Int) {
       Page(page: $page, perPage: $perPage) {
-        media(type: MANGA, sort: POPULARITY_DESC) {
+        media(type: MANGA, sort: POPULARITY_DESC, isAdult: false) {
           id
           title { romaji english native userPreferred }
           description(asHtml: false)
@@ -179,6 +204,7 @@ export async function listTrendingAniListManga(limit = 40): Promise<PluginMangaS
           countryOfOrigin
           genres
           startDate { year }
+          isAdult
         }
       }
     }
@@ -190,7 +216,7 @@ export async function listTrendingAniListManga(limit = 40): Promise<PluginMangaS
   })
 
   const media = payload.data?.Page?.media ?? []
-  return media.map(toSummary)
+  return media.filter((entry) => entry.isAdult !== true).map(toSummary)
 }
 
 export async function getAniListMangaDetails(siteId: string): Promise<PluginMangaSummary | null> {
@@ -212,6 +238,7 @@ export async function getAniListMangaDetails(siteId: string): Promise<PluginMang
         countryOfOrigin
         genres
         startDate { year }
+        isAdult
       }
     }
   `
@@ -222,6 +249,7 @@ export async function getAniListMangaDetails(siteId: string): Promise<PluginMang
 
   const media = payload.data?.Media
   if (!media) return null
+  if (media.isAdult === true) return null
   return toSummary(media)
 }
 
